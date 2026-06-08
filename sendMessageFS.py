@@ -12,6 +12,33 @@ import hmac
 import calendar
 import os
 
+def get_project_id_by_url(gitlab_url, repo_http_url, token=""):
+    """通过仓库 HTTP URL 自动查询 project_id"""
+    if not repo_http_url:
+        return None
+    
+    # 从 URL 提取 namespace/project 路径
+    # http://47.96.74.113:7070/root/iitoo-web.git → root/iitoo-web
+    match = re.search(r'/([^/]+/[^/]+?)(?:\.git)?$', repo_http_url)
+    if not match:
+        return None
+    
+    path = match.group(1)  # "root/iitoo-web"
+    encoded_path = path.replace('/', '%2F')
+    
+    api_url = f"{gitlab_url}/api/v4/projects/{encoded_path}"
+    headers = {"PRIVATE-TOKEN": token} if token else {}
+    
+    try:
+        resp = requests.get(api_url, headers=headers, timeout=5)
+        if resp.status_code == 200:
+            pid = resp.json().get('id')
+            print(f"[INFO] 自动获取 project_id={pid} for {path}", file=sys.stderr)
+            return str(pid)
+    except Exception as e:
+        print(f"[WARN] 自动查 project_id 失败: {e}", file=sys.stderr)
+    return None
+
 def gen_sign(timestamp, secret):
     string_to_sign = '{}\n{}'.format(timestamp, secret)
     hmac_code = hmac.new(string_to_sign.encode("utf-8"), digestmod=hashlib.sha256).digest()
@@ -144,16 +171,19 @@ elif status_arg == "1":
 else:
     isFinish = "构建失败"
     template_color = "red"
-# ── 解析 GitLab payload JSON ──────────────────
-before_sha = sys.argv[6].strip() if len(sys.argv) > 6 else ""
-after_sha  = sys.argv[7].strip() if len(sys.argv) > 7 else ""
-gitlab_url = sys.argv[8].strip() if len(sys.argv) > 8 else "http://47.96.74.113:7070"
-project_id = sys.argv[9].strip() if len(sys.argv) > 9 else "2"
-gl_token   = sys.argv[10].strip() if len(sys.argv) > 10 else ""
+# 位置: url  job_name  build_num  user  status  before  after  repo_http_url
+before_sha    = sys.argv[6].strip() if len(sys.argv) > 6 else ""
+after_sha     = sys.argv[7].strip() if len(sys.argv) > 7 else ""
+repo_http_url = sys.argv[8].strip() if len(sys.argv) > 8 else ""
+
+GITLAB_URL = "http://47.96.74.113:7070"
+gl_token   = "qeUsvrtzsrLZ-8xza51T"  # 公开仓库不需要，私有仓库在这里填
+
+project_id = get_project_id_by_url(GITLAB_URL, repo_http_url, gl_token) or "0"
 
 # ── 调用 GitLab API ───────────────────────────────────────────
 changed_files, merge_info = fetch_gitlab_compare(
-    gitlab_url, project_id, before_sha, after_sha, gl_token
+    GITLAB_URL, project_id, before_sha, after_sha, gl_token
 )
 # ── 构建消息内容 ──────────────────────────────
 timestamp   = str(calendar.timegm(time.gmtime()))
