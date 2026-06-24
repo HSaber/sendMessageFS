@@ -1,2 +1,4 @@
 node_modules/
 .env
+mr_review_config.env
+reviews/
