@@ -134,18 +134,31 @@ def fetch_gitlab_compare(gitlab_url, project_id, before, after, token=""):
                     seen.add(key)
 
         # ── 提取合并分支 ──────────────────────────
-        merge_info = ""
+        merge_list = []
+
         for commit in data.get('commits', []):
             msg = commit.get('message', '')
-            # 匹配 "Merge branch 'xxx' into yyy"，排除远程 URL 型
             match = re.search(r"Merge branch '([^']+)' into ([^\n]+)", msg)
             if match:
                 source = match.group(1).strip()
                 target = match.group(2).strip()
-                # 排除 "Merge branch 'dev' of http://..." 远程同步型
+                # 清理 refs/heads/ 前缀
+                source = re.sub(r'^refs/heads/', '', source)
+                target = re.sub(r'^refs/heads/', '', target)
+                # 排除远程同步型（含 http/ssh）
                 if 'http' not in msg and 'ssh' not in msg:
-                    merge_info = f"{source} -> {target}"
-                    break
+                    entry = f"{source} -> {target}"
+                    # 去重
+                    if entry not in merge_list:
+                        merge_list.append(entry)
+
+        # 拼接成带编号的字符串，单条不加编号
+        if len(merge_list) == 1:
+            merge_info = merge_list[0]
+        elif len(merge_list) > 1:
+            merge_info = "\n" + "\n".join(f"　{i+1}. {m}" for i, m in enumerate(merge_list))
+        else:
+            merge_info = ""
 
         print(f"[INFO] merge_info={merge_info}", file=sys.stderr)
         print(f"[INFO] files={files}", file=sys.stderr)
